@@ -48,7 +48,8 @@ function saveTemplates() {
 }
 
 function getActiveTemplate() {
-  return state.templates.find(t => t.id === state.activeId) || state.templates[0];
+  const tpl = state.templates.find(t => t.id === state.activeId) || state.templates[0];
+  return normalizeTemplate(tpl);
 }
 
 function saveActiveId() {
@@ -59,6 +60,17 @@ function formatTime(sec) {
   const m = Math.floor(sec / 60);
   const s = Math.floor(sec % 60);
   return `${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}`;
+}
+
+function normalizeTemplate(tpl) {
+  if (!tpl) return DEFAULT_TEMPLATE;
+  tpl.workSec = Number(tpl.workSec) || 0;
+  tpl.restSec = Number(tpl.restSec) || 0;
+  tpl.roundRestSec = Number(tpl.roundRestSec) || 0;
+  tpl.rounds = Math.max(1, Number(tpl.rounds) || 1);
+  if (!Array.isArray(tpl.exercises)) tpl.exercises = [];
+  if (tpl.exercises.length === 0) tpl.exercises = ["动作1"];
+  return tpl;
 }
 
 function todayKey() {
@@ -370,11 +382,13 @@ function renderExercises() {
 
     const input = document.createElement("input");
     input.value = name;
-    input.addEventListener("change", () => {
+    const updateName = () => {
       tpl.exercises[idx] = input.value.trim() || `动作${idx + 1}`;
       saveTemplates();
       updateHome();
-    });
+    };
+    input.addEventListener("input", updateName);
+    input.addEventListener("blur", updateName);
 
     const handle = document.createElement("div");
     handle.className = "drag-handle";
@@ -397,6 +411,17 @@ function renderExercises() {
 
   attachDrag();
   els.exerciseCount.textContent = tpl.exercises.length;
+}
+
+function syncExercisesFromInputs() {
+  const tpl = getActiveTemplate();
+  const inputs = els.exerciseList ? [...els.exerciseList.querySelectorAll("input")] : [];
+  if (inputs.length === 0) return;
+  const names = inputs.map((el, i) => el.value.trim() || `动作${i + 1}`);
+  tpl.exercises = names.length ? names : ["动作1"];
+  saveTemplates();
+  renderExercises();
+  updateHome();
 }
 
 function attachDrag() {
@@ -517,18 +542,20 @@ function updateRunUI(stage, remaining) {
   els.runStageTitle.textContent = stageLabel(stage);
   els.ringLabel.textContent = stageLabel(stage);
   els.ringTime.textContent = formatTime(remaining);
-  els.ringClock.textContent = "";
+  if (els.ringClock) els.ringClock.textContent = "";
   els.runRoundInfo.textContent = `第${stage.round}轮 · 第${stage.exercise}个动作`;
 
   const tpl = getActiveTemplate();
+  const totalExercises = Math.max(1, tpl.exercises.length || 0);
+  const totalRounds = Math.max(1, Number(tpl.rounds) || 1);
   els.exerciseDots.innerHTML = "";
-  for (let i = 0; i < tpl.exercises.length; i++) {
+  for (let i = 0; i < totalExercises; i++) {
     const dot = document.createElement("div");
     dot.className = "dot" + (i < stage.exercise ? " is-active" : "");
     els.exerciseDots.appendChild(dot);
   }
   els.roundDots.innerHTML = "";
-  for (let i = 0; i < tpl.rounds; i++) {
+  for (let i = 0; i < totalRounds; i++) {
     const dot = document.createElement("div");
     dot.className = "dot" + (i < stage.round ? " is-active" : "");
     els.roundDots.appendChild(dot);
@@ -541,13 +568,15 @@ function updateRunUI(stage, remaining) {
   ring.style.strokeDashoffset = `${circumference * (1 - ratio)}`;
 
   if (stage.type === "rest") {
-    const nextName = tpl.exercises[stage.exercise - 1] || "动作";
+    const idx = Math.min(stage.exercise - 1, tpl.exercises.length - 1);
+    const nextName = tpl.exercises[idx] || "动作";
     els.runNext.textContent = `接下来: ${nextName}`;
   } else if (stage.type === "roundRest") {
     const nextName = tpl.exercises[0] || "动作";
     els.runNext.textContent = `接下来: ${nextName}`;
   } else {
-    const name = tpl.exercises[stage.exercise - 1] || "动作";
+    const idx = Math.min(stage.exercise - 1, tpl.exercises.length - 1);
+    const name = tpl.exercises[idx] || "动作";
     els.runNext.textContent = name;
   }
 }
@@ -582,7 +611,12 @@ function setPauseIcon() {
 }
 
 function startRun() {
+  syncExercisesFromInputs();
   const tpl = getActiveTemplate();
+  if (!tpl.exercises || tpl.exercises.length === 0) {
+    tpl.exercises = ["动作1"];
+    saveTemplates();
+  }
   state.sequence = buildSequence(tpl);
   state.seqIndex = 0;
   state.running = true;
@@ -791,7 +825,10 @@ function init() {
     showView("view-checkins");
   });
 
-  $("btnListDone").addEventListener("click", () => showView("view-home"));
+  $("btnListDone").addEventListener("click", () => {
+    syncExercisesFromInputs();
+    showView("view-home");
+  });
   $("btnTemplatesDone").addEventListener("click", () => showView("view-home"));
   $("btnCheckinsDone").addEventListener("click", () => showView("view-home"));
 
@@ -842,9 +879,6 @@ function init() {
     setSoundIcon();
   });
 
-  $("btnRunHome").addEventListener("click", () => {
-    stopRunToHome();
-  });
   $("btnFinishHome").addEventListener("click", () => {
     stopRunToHome();
   });

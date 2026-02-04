@@ -217,6 +217,7 @@ body {
 
 .run-finish { display: none; padding: 10px 16px 18px; text-align: center; }
 .run-finish.is-active { display: block; }
+.run-finish.is-active ~ .run-controls { display: none; }
 .streak { margin-top: 12px; background: rgba(0,0,0,0.2); border-radius: 16px; padding: 12px; }
 .streak-title { font-weight: 600; margin-bottom: 8px; }
 .calendar-wrap { display: grid; grid-template-columns: 36px 1fr; gap: 8px; align-items: start; }
