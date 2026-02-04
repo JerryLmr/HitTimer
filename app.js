@@ -137,6 +137,13 @@ function getYearSessions(year) {
   return state.history.sessions.filter(s => s.date.startsWith(`${year}-`));
 }
 
+function weekdayLabel(dateStr) {
+  const [y, m, d] = dateStr.split("-").map(Number);
+  const date = new Date(y, (m || 1) - 1, d || 1);
+  const labels = ["周日", "周一", "周二", "周三", "周四", "周五", "周六"];
+  return labels[date.getDay()] || "";
+}
+
 function buildMonthGrid(year, monthIndex, gridEl, weekdaysEl, countEl) {
   gridEl.innerHTML = "";
   weekdaysEl.innerHTML = "";
@@ -182,6 +189,58 @@ function buildMonthGrid(year, monthIndex, gridEl, weekdaysEl, countEl) {
   if (countEl) countEl.textContent = String(monthCount);
 }
 
+function buildYearGrid(year, gridEl, monthsEl) {
+  gridEl.innerHTML = "";
+  monthsEl.innerHTML = "";
+
+  const start = new Date(year, 0, 1);
+  const startDay = (start.getDay() + 6) % 7;
+  const startDate = new Date(year, 0, 1 - startDay);
+  const endDate = new Date(year, 11, 31);
+  const totalDays = Math.floor((endDate - startDate) / 86400000) + 1;
+  const totalCells = Math.ceil(totalDays / 7) * 7;
+  const totalWeeks = totalCells / 7;
+
+  const monthNames = ["1月", "2月", "3月", "4月", "5月", "6月", "7月", "8月", "9月", "10月", "11月", "12月"];
+  const monthLabels = Array(totalWeeks).fill("");
+  for (let m = 0; m < 12; m++) {
+    const first = new Date(year, m, 1);
+    const diffDays = Math.floor((first - startDate) / 86400000);
+    const weekIndex = Math.floor(diffDays / 7);
+    if (weekIndex >= 0 && weekIndex < monthLabels.length && !monthLabels[weekIndex]) {
+      monthLabels[weekIndex] = monthNames[m];
+    }
+  }
+  monthLabels.forEach(label => {
+    const div = document.createElement("div");
+    div.className = "year-month";
+    div.textContent = label;
+    monthsEl.appendChild(div);
+  });
+
+  const sessions = getYearSessions(year);
+  const dayCounts = {};
+  sessions.forEach(s => { dayCounts[s.date] = (dayCounts[s.date] || 0) + 1; });
+
+  const today = new Date();
+  const isCurrentYear = today.getFullYear() === year;
+
+  for (let i = 0; i < totalCells; i++) {
+    const cellDate = new Date(startDate.getFullYear(), startDate.getMonth(), startDate.getDate() + i);
+    const cell = document.createElement("div");
+    cell.className = "cal-cell";
+    if (cellDate.getFullYear() === year) {
+      const key = `${cellDate.getFullYear()}-${String(cellDate.getMonth() + 1).padStart(2, "0")}-${String(cellDate.getDate()).padStart(2, "0")}`;
+      const count = dayCounts[key] || 0;
+      if (count > 0) cell.classList.add("is-done");
+      if (isCurrentYear && cellDate.getMonth() === today.getMonth() && cellDate.getDate() === today.getDate()) {
+        cell.classList.add("is-today");
+      }
+    }
+    gridEl.appendChild(cell);
+  }
+}
+
 function renderCalendar() {
   const grid = $("calendarGrid");
   const weekdays = $("finishWeekdays");
@@ -211,6 +270,8 @@ function renderCheckinView() {
 
   const grid = $("checkinCalendar");
   const weekdays = $("checkinWeekdays");
+  const monthWrap = $("checkinMonthWrap");
+  const yearWrap = $("checkinYearWrap");
   const title = $("checkinTitle");
   const logList = $("logList");
   const logTotal = $("logTotal");
@@ -222,11 +283,19 @@ function renderCheckinView() {
     sessions = getMonthSessions(year, monthIndex);
     title.textContent = `本月完成次数：${sessions.length}`;
     buildMonthGrid(year, monthIndex, grid, weekdays, null);
+    monthWrap.classList.remove("is-hidden");
+    yearWrap.classList.remove("is-active");
+    monthWrap.style.display = "grid";
+    yearWrap.style.display = "none";
   } else {
     sessions = getYearSessions(year);
     title.textContent = `本年完成次数：${sessions.length}`;
-    grid.innerHTML = "";
-    weekdays.innerHTML = "";
+    const yearGrid = $("checkinYearCalendar");
+    const yearMonths = $("checkinYearMonths");
+    buildYearGrid(year, yearGrid, yearMonths);
+    monthWrap.style.display = "none";
+    yearWrap.classList.add("is-active");
+    yearWrap.style.display = "block";
   }
 
   let totalSec = 0;
@@ -240,7 +309,7 @@ function renderCheckinView() {
       const row = document.createElement("div");
       row.className = "log-item";
       const left = document.createElement("div");
-      left.textContent = s.date;
+      left.textContent = `${s.date} ${weekdayLabel(s.date)}`;
       const right = document.createElement("div");
       right.textContent = formatDuration(s.durationSec || 0);
       row.append(left, right);

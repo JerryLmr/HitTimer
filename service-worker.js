@@ -1,4 +1,4 @@
-﻿const CACHE_NAME = "hittimer-v3";
+﻿const CACHE_NAME = "hittimer-v6";
 const ASSETS = [
   "./",
   "./index.html",
