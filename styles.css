@@ -41,6 +41,7 @@ body {
 
 .hero { text-align: center; padding: 20px 0 14px; }
 .hero-time { font-size: 64px; font-weight: 600; color: #111; }
+.hero-time.title-only { color: #fff; font-size: 36px; letter-spacing: 1px; }
 
 .play-dock {
   display: flex;
@@ -56,6 +57,8 @@ body {
   border: 6px solid #000;
   background: #000;
   box-shadow: var(--shadow);
+  display: grid;
+  place-items: center;
 }
 .play-icon {
   display: block;
@@ -64,7 +67,7 @@ body {
   border-top: 10px solid transparent;
   border-bottom: 10px solid transparent;
   border-left: 16px solid #ff3f6e;
-  margin-left: 6px;
+  margin-left: 2px;
 }
 
 .panel {
@@ -178,9 +181,9 @@ body {
 .ring-svg { width: 220px; height: 220px; transform: rotate(-90deg); }
 .ring-bg { fill: none; stroke: var(--ring-bg); stroke-width: 12; }
 .ring-fg { fill: none; stroke: var(--ring); stroke-width: 12; stroke-linecap: round; stroke-dasharray: 578; stroke-dashoffset: 0; transition: stroke-dashoffset 0.2s linear; }
-.ring-content { position: absolute; inset: 0; display: grid; place-items: center; text-align: center; }
+.ring-content { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 6px; text-align: center; }
 .ring-label { font-size: 16px; opacity: 0.8; }
-.ring-time { font-size: 44px; font-weight: 700; }
+.ring-time { font-size: 44px; font-weight: 700; line-height: 1; }
 
 .run-next { text-align: center; font-size: 18px; margin: 8px 0 14px; }
 
@@ -197,7 +200,11 @@ body {
   justify-content: center;
 }
 
-.run-controls { display: flex; align-items: center; justify-content: center; gap: 14px; padding-bottom: 20px; }
+.run-controls { display: grid; grid-template-columns: 1fr auto auto auto 1fr; align-items: center; gap: 14px; padding-bottom: 20px; }
+.run-controls .icon-btn:first-child { grid-column: 2; }
+.run-controls .big-btn { grid-column: 3; }
+.run-controls .icon-btn:nth-child(3) { grid-column: 4; }
+.run-controls .icon-btn:nth-child(4) { grid-column: 5; }
 .big-btn { width: 72px; height: 72px; border-radius: 36px; border: none; background: #fff; color: #222; }
 .pause-icon {
   display: inline-block;
