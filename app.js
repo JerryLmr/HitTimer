@@ -1,0 +1,583 @@
+﻿const STORAGE_KEY = "hittimer.templates";
+const ACTIVE_KEY = "hittimer.activeTemplateId";
+const MUTED_KEY = "hittimer.muted";
+
+const DEFAULT_TEMPLATE = {
+  id: "default",
+  name: "默认训练",
+  workSec: 45,
+  restSec: 15,
+  roundRestSec: 0,
+  rounds: 2,
+  exercises: ["动作1", "动作2", "动作3", "动作4", "动作5"],
+};
+
+const state = {
+  templates: [],
+  activeId: null,
+  muted: false,
+  sequence: [],
+  seqIndex: 0,
+  running: false,
+  paused: false,
+  remainingSec: 0,
+  endTime: 0,
+};
+
+const els = {};
+
+function $(id) { return document.getElementById(id); }
+
+function loadTemplates() {
+  const raw = localStorage.getItem(STORAGE_KEY);
+  if (!raw) return [DEFAULT_TEMPLATE];
+  try {
+    const parsed = JSON.parse(raw);
+    return Array.isArray(parsed) && parsed.length ? parsed : [DEFAULT_TEMPLATE];
+  } catch {
+    return [DEFAULT_TEMPLATE];
+  }
+}
+
+function saveTemplates() {
+  localStorage.setItem(STORAGE_KEY, JSON.stringify(state.templates));
+}
+
+function getActiveTemplate() {
+  return state.templates.find(t => t.id === state.activeId) || state.templates[0];
+}
+
+function saveActiveId() {
+  localStorage.setItem(ACTIVE_KEY, state.activeId || "");
+}
+
+function formatTime(sec) {
+  const m = Math.floor(sec / 60);
+  const s = Math.floor(sec % 60);
+  return `${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}`;
+}
+
+function parseTime(input) {
+  const match = String(input).trim().match(/^(\d{1,3}):(\d{2})$/);
+  if (!match) return null;
+  const m = Number(match[1]);
+  const s = Number(match[2]);
+  if (Number.isNaN(m) || Number.isNaN(s) || s > 59) return null;
+  return m * 60 + s;
+}
+
+function showView(id) {
+  document.querySelectorAll(".view").forEach(v => v.classList.remove("is-active"));
+  $(id).classList.add("is-active");
+  if (id !== "view-run") {
+    document.body.classList.remove("run-work", "run-rest", "run-roundrest", "run-done");
+  }
+}
+
+function openModal({ title, value, hint, onConfirm }) {
+  els.modalTitle.textContent = title;
+  els.modalInput.value = value;
+  els.modalHint.textContent = hint || "";
+  els.modal.classList.add("is-active");
+  els.modalInput.focus();
+
+  const confirmHandler = () => {
+    const val = els.modalInput.value.trim();
+    onConfirm(val);
+  };
+  const clean = () => {
+    els.modal.classList.remove("is-active");
+    els.modalOk.removeEventListener("click", confirmHandler);
+    els.modalInput.removeEventListener("keydown", enterHandler);
+  };
+  const enterHandler = e => {
+    if (e.key === "Enter") {
+      confirmHandler();
+      clean();
+    }
+  };
+
+  els.modalOk.addEventListener("click", () => { confirmHandler(); clean(); }, { once: true });
+  els.modalCancel.addEventListener("click", () => clean(), { once: true });
+  els.modalInput.addEventListener("keydown", enterHandler);
+}
+
+function updateHome() {
+  const tpl = getActiveTemplate();
+  els.valWork.textContent = formatTime(tpl.workSec);
+  els.valRest.textContent = formatTime(tpl.restSec);
+  els.valRoundRest.textContent = formatTime(tpl.roundRestSec);
+  els.valExercises.textContent = String(tpl.exercises.length);
+  els.valRounds.textContent = `${tpl.rounds}X`;
+  els.homeTotalTime.textContent = formatTime(tpl.workSec);
+}
+
+function renderExercises() {
+  const tpl = getActiveTemplate();
+  els.exerciseList.innerHTML = "";
+  tpl.exercises.forEach((name, idx) => {
+    const row = document.createElement("div");
+    row.className = "list-item";
+    row.draggable = true;
+    row.dataset.index = idx;
+
+    const index = document.createElement("div");
+    index.className = "list-index";
+    index.textContent = idx + 1;
+
+    const input = document.createElement("input");
+    input.value = name;
+    input.addEventListener("change", () => {
+      tpl.exercises[idx] = input.value.trim() || `动作${idx + 1}`;
+      saveTemplates();
+      updateHome();
+    });
+
+    const handle = document.createElement("div");
+    handle.className = "drag-handle";
+    handle.textContent = "≡";
+
+    const del = document.createElement("button");
+    del.className = "delete-btn";
+    del.textContent = "删除";
+    del.addEventListener("click", () => {
+      tpl.exercises.splice(idx, 1);
+      if (tpl.exercises.length === 0) tpl.exercises.push("动作1");
+      saveTemplates();
+      renderExercises();
+      updateHome();
+    });
+
+    row.append(index, input, handle, del);
+    els.exerciseList.appendChild(row);
+  });
+
+  attachDrag();
+  els.exerciseCount.textContent = tpl.exercises.length;
+}
+
+function attachDrag() {
+  let dragging = null;
+  els.exerciseList.querySelectorAll(".list-item").forEach(item => {
+    item.addEventListener("dragstart", e => {
+      dragging = item;
+      e.dataTransfer.effectAllowed = "move";
+    });
+    item.addEventListener("dragover", e => {
+      e.preventDefault();
+      const target = item;
+      if (dragging && target !== dragging) {
+        const list = els.exerciseList;
+        const draggingIndex = [...list.children].indexOf(dragging);
+        const targetIndex = [...list.children].indexOf(target);
+        if (draggingIndex < targetIndex) {
+          list.insertBefore(dragging, target.nextSibling);
+        } else {
+          list.insertBefore(dragging, target);
+        }
+      }
+    });
+    item.addEventListener("drop", () => {
+      persistDrag();
+      dragging = null;
+    });
+  });
+}
+
+function persistDrag() {
+  const tpl = getActiveTemplate();
+  const names = [...els.exerciseList.children].map(row => row.querySelector("input").value.trim() || "动作");
+  tpl.exercises = names;
+  saveTemplates();
+  renderExercises();
+  updateHome();
+}
+
+function renderTemplates() {
+  els.templateList.innerHTML = "";
+  state.templates.forEach(tpl => {
+    const row = document.createElement("div");
+    row.className = "list-item";
+
+    const input = document.createElement("input");
+    input.value = tpl.name;
+    input.addEventListener("change", () => {
+      tpl.name = input.value.trim() || "未命名";
+      saveTemplates();
+    });
+
+    const loadBtn = document.createElement("button");
+    loadBtn.className = "pill-btn";
+    loadBtn.textContent = tpl.id === state.activeId ? "当前" : "加载";
+    loadBtn.addEventListener("click", () => {
+      state.activeId = tpl.id;
+      saveActiveId();
+      updateHome();
+      renderTemplates();
+    });
+
+    const del = document.createElement("button");
+    del.className = "delete-btn";
+    del.textContent = "删除";
+    del.addEventListener("click", () => {
+      if (state.templates.length === 1) return;
+      state.templates = state.templates.filter(x => x.id !== tpl.id);
+      if (!state.templates.find(x => x.id === state.activeId)) {
+        state.activeId = state.templates[0].id;
+      }
+      saveTemplates();
+      saveActiveId();
+      renderTemplates();
+      updateHome();
+    });
+
+    row.append(input, loadBtn, del);
+    els.templateList.appendChild(row);
+  });
+
+  els.templateCount.textContent = state.templates.length;
+}
+
+function buildSequence(tpl) {
+  const seq = [];
+  for (let r = 0; r < tpl.rounds; r++) {
+    for (let i = 0; i < tpl.exercises.length; i++) {
+      seq.push({ type: "work", round: r + 1, exercise: i + 1, duration: tpl.workSec });
+      const isLastExercise = i === tpl.exercises.length - 1;
+      if (!isLastExercise) {
+        seq.push({ type: "rest", round: r + 1, exercise: i + 2, duration: tpl.restSec });
+      } else if (r < tpl.rounds - 1 && tpl.roundRestSec > 0) {
+        seq.push({ type: "roundRest", round: r + 1, exercise: 1, duration: tpl.roundRestSec });
+      }
+    }
+  }
+  return seq;
+}
+
+function stageLabel(stage) {
+  if (stage.type === "work") return "工作";
+  if (stage.type === "rest") return "休息";
+  if (stage.type === "roundRest") return "回合休息";
+  return "完成";
+}
+
+function updateRunUI(stage, remaining) {
+  document.body.classList.remove("run-work", "run-rest", "run-roundrest", "run-done");
+  if (!stage) {
+    document.body.classList.add("run-done");
+    return;
+  }
+  if (stage.type === "work") document.body.classList.add("run-work");
+  if (stage.type === "rest") document.body.classList.add("run-rest");
+  if (stage.type === "roundRest") document.body.classList.add("run-roundrest");
+
+  els.runStageTitle.textContent = stageLabel(stage);
+  els.ringLabel.textContent = stageLabel(stage);
+  els.ringTime.textContent = formatTime(remaining);
+  const now = new Date();
+  els.ringClock.textContent = `🕒 ${String(now.getHours()).padStart(2, "0")}:${String(now.getMinutes()).padStart(2, "0")}`;
+  els.runRoundInfo.textContent = `第${stage.round}轮 · 第${stage.exercise}个动作`;
+
+  const tpl = getActiveTemplate();
+  els.exerciseDots.innerHTML = "";
+  for (let i = 0; i < tpl.exercises.length; i++) {
+    const dot = document.createElement("div");
+    dot.className = "dot" + (i < stage.exercise ? " is-active" : "");
+    els.exerciseDots.appendChild(dot);
+  }
+  els.roundDots.innerHTML = "";
+  for (let i = 0; i < tpl.rounds; i++) {
+    const dot = document.createElement("div");
+    dot.className = "dot" + (i < stage.round ? " is-active" : "");
+    els.roundDots.appendChild(dot);
+  }
+
+  const ring = els.ringProgress;
+  const circumference = 2 * Math.PI * 92;
+  ring.style.strokeDasharray = `${circumference}`;
+  const ratio = stage.duration ? remaining / stage.duration : 0;
+  ring.style.strokeDashoffset = `${circumference * (1 - ratio)}`;
+
+  if (stage.type === "rest") {
+    const nextName = tpl.exercises[stage.exercise - 1] || "动作";
+    els.runNext.textContent = `接下来: ${nextName}`;
+  } else if (stage.type === "roundRest") {
+    const nextName = tpl.exercises[0] || "动作";
+    els.runNext.textContent = `接下来: ${nextName}`;
+  } else {
+    const name = tpl.exercises[stage.exercise - 1] || "动作";
+    els.runNext.textContent = name;
+  }
+}
+
+function playBeep() {
+  if (state.muted) return;
+  const AudioCtx = window.AudioContext || window.webkitAudioContext;
+  if (!AudioCtx) return;
+  const ctx = new AudioCtx();
+  const osc = ctx.createOscillator();
+  const gain = ctx.createGain();
+  osc.type = "sine";
+  osc.frequency.value = 880;
+  gain.gain.value = 0.12;
+  osc.connect(gain).connect(ctx.destination);
+  osc.start();
+  osc.stop(ctx.currentTime + 0.15);
+  osc.onended = () => ctx.close();
+}
+
+function setSoundIcon() {
+  $("btnSound").textContent = state.muted ? "🔇" : "🔈";
+}
+
+function setPauseIcon() {
+  const btn = $("btnPause");
+  if (state.paused) {
+    btn.innerHTML = '<span class="play-icon" style="border-left-color:#222;margin:0 auto"></span>';
+  } else {
+    btn.innerHTML = '<span class="pause-icon"></span>';
+  }
+}
+
+function startRun() {
+  const tpl = getActiveTemplate();
+  state.sequence = buildSequence(tpl);
+  state.seqIndex = 0;
+  state.running = true;
+  state.paused = false;
+  const stage = state.sequence[0];
+  state.remainingSec = stage.duration;
+  state.endTime = Date.now() + state.remainingSec * 1000;
+  showView("view-run");
+  setPauseIcon();
+  tick(true);
+  playBeep();
+}
+
+function tick(force) {
+  if (!state.running || state.paused) return;
+  const stage = state.sequence[state.seqIndex];
+  if (!stage) {
+    endRun();
+    return;
+  }
+  const remaining = Math.max(0, Math.ceil((state.endTime - Date.now()) / 1000));
+  state.remainingSec = remaining;
+  updateRunUI(stage, remaining);
+  if (remaining === 0 || force) {
+    if (remaining === 0) {
+      nextStage();
+      return;
+    }
+  }
+}
+
+function nextStage() {
+  state.seqIndex += 1;
+  const stage = state.sequence[state.seqIndex];
+  if (!stage) {
+    endRun();
+    return;
+  }
+  state.remainingSec = stage.duration;
+  state.endTime = Date.now() + stage.duration * 1000;
+  playBeep();
+  updateRunUI(stage, state.remainingSec);
+}
+
+function prevStage() {
+  state.seqIndex = Math.max(0, state.seqIndex - 1);
+  const stage = state.sequence[state.seqIndex];
+  state.remainingSec = stage.duration;
+  state.endTime = Date.now() + stage.duration * 1000;
+  updateRunUI(stage, state.remainingSec);
+}
+
+function endRun() {
+  state.running = false;
+  state.paused = false;
+  setPauseIcon();
+  document.body.classList.add("run-done");
+  els.runStageTitle.textContent = "完成";
+  els.ringLabel.textContent = "完成";
+  els.ringTime.textContent = "00:00";
+  els.runRoundInfo.textContent = "训练结束";
+  els.runNext.textContent = "";
+}
+
+function togglePause() {
+  if (!state.running) return;
+  state.paused = !state.paused;
+  setPauseIcon();
+  if (!state.paused) {
+    state.endTime = Date.now() + state.remainingSec * 1000;
+  }
+}
+
+function init() {
+  els.valWork = $("valWork");
+  els.valRest = $("valRest");
+  els.valRoundRest = $("valRoundRest");
+  els.valExercises = $("valExercises");
+  els.valRounds = $("valRounds");
+  els.homeTotalTime = $("homeTotalTime");
+  els.exerciseList = $("exerciseList");
+  els.exerciseCount = $("exerciseCount");
+  els.templateList = $("templateList");
+  els.templateCount = $("templateCount");
+  els.runStageTitle = $("runStageTitle");
+  els.runRoundInfo = $("runRoundInfo");
+  els.ringLabel = $("ringLabel");
+  els.ringTime = $("ringTime");
+  els.ringClock = $("ringClock");
+  els.runNext = $("runNext");
+  els.exerciseDots = $("exerciseDots");
+  els.roundDots = $("roundDots");
+  els.ringProgress = $("ringProgress");
+  els.modal = $("modal");
+  els.modalTitle = $("modalTitle");
+  els.modalInput = $("modalInput");
+  els.modalHint = $("modalHint");
+  els.modalOk = $("modalOk");
+  els.modalCancel = $("modalCancel");
+
+  state.templates = loadTemplates();
+  state.activeId = localStorage.getItem(ACTIVE_KEY) || state.templates[0].id;
+  state.muted = localStorage.getItem(MUTED_KEY) === "true";
+
+  updateHome();
+  renderExercises();
+  renderTemplates();
+  setSoundIcon();
+
+  $("rowWork").addEventListener("click", () => {
+    const tpl = getActiveTemplate();
+    openModal({
+      title: "工作时间",
+      value: formatTime(tpl.workSec),
+      hint: "格式 mm:ss",
+      onConfirm: val => {
+        const sec = parseTime(val);
+        if (sec == null) return;
+        tpl.workSec = sec;
+        saveTemplates();
+        updateHome();
+      },
+    });
+  });
+
+  $("rowRest").addEventListener("click", () => {
+    const tpl = getActiveTemplate();
+    openModal({
+      title: "休息时间",
+      value: formatTime(tpl.restSec),
+      hint: "格式 mm:ss",
+      onConfirm: val => {
+        const sec = parseTime(val);
+        if (sec == null) return;
+        tpl.restSec = sec;
+        saveTemplates();
+        updateHome();
+      },
+    });
+  });
+
+  $("rowRoundRest").addEventListener("click", () => {
+    const tpl = getActiveTemplate();
+    openModal({
+      title: "回合重置",
+      value: formatTime(tpl.roundRestSec),
+      hint: "格式 mm:ss",
+      onConfirm: val => {
+        const sec = parseTime(val);
+        if (sec == null) return;
+        tpl.roundRestSec = sec;
+        saveTemplates();
+        updateHome();
+      },
+    });
+  });
+
+  $("rowRounds").addEventListener("click", () => {
+    const tpl = getActiveTemplate();
+    openModal({
+      title: "回合数",
+      value: String(tpl.rounds),
+      hint: "输入数字",
+      onConfirm: val => {
+        const num = Number(val);
+        if (!Number.isInteger(num) || num <= 0) return;
+        tpl.rounds = num;
+        saveTemplates();
+        updateHome();
+      },
+    });
+  });
+
+  $("rowExercises").addEventListener("click", () => {
+    showView("view-list");
+  });
+
+  $("rowLoad").addEventListener("click", () => {
+    renderTemplates();
+    showView("view-templates");
+  });
+
+  $("btnListDone").addEventListener("click", () => showView("view-home"));
+  $("btnTemplatesDone").addEventListener("click", () => showView("view-home"));
+
+  $("btnAddExercise").addEventListener("click", () => {
+    const tpl = getActiveTemplate();
+    tpl.exercises.push(`动作${tpl.exercises.length + 1}`);
+    saveTemplates();
+    renderExercises();
+    updateHome();
+  });
+
+  $("btnSaveTemplate").addEventListener("click", () => {
+    openModal({
+      title: "模板名称",
+      value: `模板 ${state.templates.length + 1}`,
+      hint: "保存当前配置",
+      onConfirm: val => {
+        const tpl = getActiveTemplate();
+        const newTpl = { ...tpl, id: `tpl-${Date.now()}`, name: val || "未命名" };
+        state.templates.push(newTpl);
+        saveTemplates();
+        renderTemplates();
+      },
+    });
+  });
+
+  $("btnStart").addEventListener("click", () => {
+    startRun();
+  });
+
+  $("btnPause").addEventListener("click", () => {
+    togglePause();
+  });
+
+  $("btnNext").addEventListener("click", () => {
+    if (!state.running) return;
+    nextStage();
+  });
+
+  $("btnPrev").addEventListener("click", () => {
+    if (!state.running) return;
+    prevStage();
+  });
+
+  $("btnSound").addEventListener("click", () => {
+    state.muted = !state.muted;
+    localStorage.setItem(MUTED_KEY, String(state.muted));
+    setSoundIcon();
+  });
+
+  setInterval(() => tick(false), 250);
+
+  if ("serviceWorker" in navigator) {
+    navigator.serviceWorker.register("service-worker.js");
+  }
+}
+
+document.addEventListener("DOMContentLoaded", init);
