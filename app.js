@@ -364,7 +364,9 @@ function updateHome() {
   els.valRoundRest.textContent = formatTime(tpl.roundRestSec);
   els.valExercises.textContent = String(tpl.exercises.length);
   els.valRounds.textContent = `${tpl.rounds}X`;
-  els.homeTotalTime.textContent = formatTime(tpl.workSec);
+  if (els.homeTotalTime) {
+    els.homeTotalTime.textContent = formatTime(tpl.workSec);
+  }
 }
 
 function renderExercises() {
