@@ -1,6 +1,7 @@
 ﻿const STORAGE_KEY = "hittimer.templates";
 const ACTIVE_KEY = "hittimer.activeTemplateId";
 const MUTED_KEY = "hittimer.muted";
+const HISTORY_KEY = "hittimer.history";
 
 const DEFAULT_TEMPLATE = {
   id: "default",
@@ -16,12 +17,15 @@ const state = {
   templates: [],
   activeId: null,
   muted: false,
+  history: { sessions: [] },
   sequence: [],
   seqIndex: 0,
   running: false,
   paused: false,
   remainingSec: 0,
   endTime: 0,
+  completedRecorded: false,
+  checkinMode: "month",
 };
 
 const els = {};
@@ -57,6 +61,37 @@ function formatTime(sec) {
   return `${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}`;
 }
 
+function todayKey() {
+  const now = new Date();
+  return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`;
+}
+
+function loadHistory() {
+  const raw = localStorage.getItem(HISTORY_KEY);
+  if (!raw) return { sessions: [] };
+  try {
+    const parsed = JSON.parse(raw);
+    if (parsed && Array.isArray(parsed.sessions)) return parsed;
+    if (parsed && typeof parsed === "object") {
+      const sessions = [];
+      Object.entries(parsed).forEach(([date, count]) => {
+        const times = Number(count) || 0;
+        for (let i = 0; i < times; i++) {
+          sessions.push({ date, durationSec: 0 });
+        }
+      });
+      return { sessions };
+    }
+    return { sessions: [] };
+  } catch {
+    return { sessions: [] };
+  }
+}
+
+function saveHistory() {
+  localStorage.setItem(HISTORY_KEY, JSON.stringify(state.history));
+}
+
 function parseTime(input) {
   const match = String(input).trim().match(/^(\d{1,3}):(\d{2})$/);
   if (!match) return null;
@@ -72,6 +107,145 @@ function showView(id) {
   if (id !== "view-run") {
     document.body.classList.remove("run-work", "run-rest", "run-roundrest", "run-done");
   }
+}
+
+function recordCompletion(durationSec) {
+  if (state.completedRecorded) return;
+  const key = todayKey();
+  state.history.sessions.push({ date: key, durationSec });
+  saveHistory();
+  state.completedRecorded = true;
+  renderCalendar();
+  renderCheckinView();
+}
+
+function formatDuration(sec) {
+  const s = Math.max(0, Math.round(sec || 0));
+  const h = Math.floor(s / 3600);
+  const m = Math.floor((s % 3600) / 60);
+  const r = s % 60;
+  if (h > 0) return `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}:${String(r).padStart(2, "0")}`;
+  return `${String(m).padStart(2, "0")}:${String(r).padStart(2, "0")}`;
+}
+
+function getMonthSessions(year, monthIndex) {
+  const month = String(monthIndex + 1).padStart(2, "0");
+  return state.history.sessions.filter(s => s.date.startsWith(`${year}-${month}-`));
+}
+
+function getYearSessions(year) {
+  return state.history.sessions.filter(s => s.date.startsWith(`${year}-`));
+}
+
+function buildMonthGrid(year, monthIndex, gridEl, weekdaysEl, countEl) {
+  gridEl.innerHTML = "";
+  weekdaysEl.innerHTML = "";
+  const weekdays = ["周一", "周二", "周三", "周四", "周五", "周六", "周日"];
+  weekdays.forEach(w => {
+    const label = document.createElement("div");
+    label.textContent = w;
+    weekdaysEl.appendChild(label);
+  });
+
+  const first = new Date(year, monthIndex, 1);
+  const daysInMonth = new Date(year, monthIndex + 1, 0).getDate();
+  const startDay = (first.getDay() + 6) % 7;
+  const startDate = new Date(year, monthIndex, 1 - startDay);
+
+  const sessions = getMonthSessions(year, monthIndex);
+  const dayCounts = {};
+  sessions.forEach(s => { dayCounts[s.date] = (dayCounts[s.date] || 0) + 1; });
+
+  const today = new Date();
+  const isCurrentMonth = today.getFullYear() === year && today.getMonth() === monthIndex;
+
+  let monthCount = 0;
+  const totalCells = Math.ceil((startDay + daysInMonth) / 7) * 7;
+  for (let i = 0; i < totalCells; i++) {
+    const cellDate = new Date(startDate.getFullYear(), startDate.getMonth(), startDate.getDate() + i);
+    const cell = document.createElement("div");
+    cell.className = "cal-cell";
+    if (cellDate.getMonth() === monthIndex) {
+      const key = `${cellDate.getFullYear()}-${String(cellDate.getMonth() + 1).padStart(2, "0")}-${String(cellDate.getDate()).padStart(2, "0")}`;
+      const count = dayCounts[key] || 0;
+      if (count > 0) {
+        cell.classList.add("is-done");
+        monthCount += count;
+      }
+      if (isCurrentMonth && cellDate.getDate() === today.getDate()) {
+        cell.classList.add("is-today");
+      }
+    }
+    gridEl.appendChild(cell);
+  }
+
+  if (countEl) countEl.textContent = String(monthCount);
+}
+
+function renderCalendar() {
+  const grid = $("calendarGrid");
+  const weekdays = $("finishWeekdays");
+  const now = new Date();
+  if (!grid || !weekdays) return;
+  buildMonthGrid(now.getFullYear(), now.getMonth(), grid, weekdays, $("monthCount"));
+}
+
+function renderCheckinView() {
+  const year = new Date().getFullYear();
+  $("checkinYearLabel").textContent = String(year);
+  const monthSelect = $("checkinMonthSelect");
+  if (monthSelect.options.length === 0) {
+    for (let m = 1; m <= 12; m++) {
+      const opt = document.createElement("option");
+      opt.value = String(m);
+      opt.textContent = `${m}月`;
+      monthSelect.appendChild(opt);
+    }
+    monthSelect.value = String(new Date().getMonth() + 1);
+  }
+
+  const mode = state.checkinMode;
+  $("modeMonth").classList.toggle("is-active", mode === "month");
+  $("modeYear").classList.toggle("is-active", mode === "year");
+  monthSelect.disabled = mode !== "month";
+
+  const grid = $("checkinCalendar");
+  const weekdays = $("checkinWeekdays");
+  const title = $("checkinTitle");
+  const logList = $("logList");
+  const logTotal = $("logTotal");
+  logList.innerHTML = "";
+
+  let sessions = [];
+  if (mode === "month") {
+    const monthIndex = Number(monthSelect.value) - 1;
+    sessions = getMonthSessions(year, monthIndex);
+    title.textContent = `本月完成次数：${sessions.length}`;
+    buildMonthGrid(year, monthIndex, grid, weekdays, null);
+  } else {
+    sessions = getYearSessions(year);
+    title.textContent = `本年完成次数：${sessions.length}`;
+    grid.innerHTML = "";
+    weekdays.innerHTML = "";
+  }
+
+  let totalSec = 0;
+  sessions.forEach(s => { totalSec += Number(s.durationSec) || 0; });
+  logTotal.textContent = `总时间：${formatDuration(totalSec)}`;
+
+  sessions
+    .slice()
+    .sort((a, b) => (a.date < b.date ? 1 : -1))
+    .forEach(s => {
+      const row = document.createElement("div");
+      row.className = "log-item";
+      const left = document.createElement("div");
+      left.textContent = s.date;
+      const right = document.createElement("div");
+      right.textContent = formatDuration(s.durationSec || 0);
+      row.append(left, right);
+      logList.appendChild(row);
+    });
 }
 
 function openModal({ title, value, hint, onConfirm }) {
@@ -274,8 +448,7 @@ function updateRunUI(stage, remaining) {
   els.runStageTitle.textContent = stageLabel(stage);
   els.ringLabel.textContent = stageLabel(stage);
   els.ringTime.textContent = formatTime(remaining);
-  const now = new Date();
-  els.ringClock.textContent = `🕒 ${String(now.getHours()).padStart(2, "0")}:${String(now.getMinutes()).padStart(2, "0")}`;
+  els.ringClock.textContent = "";
   els.runRoundInfo.textContent = `第${stage.round}轮 · 第${stage.exercise}个动作`;
 
   const tpl = getActiveTemplate();
@@ -345,10 +518,12 @@ function startRun() {
   state.seqIndex = 0;
   state.running = true;
   state.paused = false;
+  state.completedRecorded = false;
   const stage = state.sequence[0];
   state.remainingSec = stage.duration;
   state.endTime = Date.now() + state.remainingSec * 1000;
   showView("view-run");
+  $("runFinish").classList.remove("is-active");
   setPauseIcon();
   tick(true);
   playBeep();
@@ -403,6 +578,21 @@ function endRun() {
   els.ringTime.textContent = "00:00";
   els.runRoundInfo.textContent = "训练结束";
   els.runNext.textContent = "";
+  $("runFinish").classList.add("is-active");
+  const totalSec = state.sequence.reduce((sum, s) => sum + (s.duration || 0), 0);
+  recordCompletion(totalSec);
+}
+
+function stopRunToHome() {
+  state.running = false;
+  state.paused = false;
+  state.sequence = [];
+  state.seqIndex = 0;
+  state.remainingSec = 0;
+  state.endTime = 0;
+  state.completedRecorded = false;
+  $("runFinish").classList.remove("is-active");
+  showView("view-home");
 }
 
 function togglePause() {
@@ -444,11 +634,16 @@ function init() {
   state.templates = loadTemplates();
   state.activeId = localStorage.getItem(ACTIVE_KEY) || state.templates[0].id;
   state.muted = localStorage.getItem(MUTED_KEY) === "true";
+  state.history = loadHistory();
+  state.completedRecorded = false;
+  state.checkinMode = "month";
 
   updateHome();
   renderExercises();
   renderTemplates();
   setSoundIcon();
+  renderCalendar();
+  renderCheckinView();
 
   $("rowWork").addEventListener("click", () => {
     const tpl = getActiveTemplate();
@@ -522,9 +717,14 @@ function init() {
     renderTemplates();
     showView("view-templates");
   });
+  $("rowCheckins").addEventListener("click", () => {
+    renderCheckinView();
+    showView("view-checkins");
+  });
 
   $("btnListDone").addEventListener("click", () => showView("view-home"));
   $("btnTemplatesDone").addEventListener("click", () => showView("view-home"));
+  $("btnCheckinsDone").addEventListener("click", () => showView("view-home"));
 
   $("btnAddExercise").addEventListener("click", () => {
     const tpl = getActiveTemplate();
@@ -573,6 +773,24 @@ function init() {
     setSoundIcon();
   });
 
+  $("btnRunHome").addEventListener("click", () => {
+    stopRunToHome();
+  });
+  $("btnFinishHome").addEventListener("click", () => {
+    stopRunToHome();
+  });
+  $("modeMonth").addEventListener("click", () => {
+    state.checkinMode = "month";
+    renderCheckinView();
+  });
+  $("modeYear").addEventListener("click", () => {
+    state.checkinMode = "year";
+    renderCheckinView();
+  });
+  $("checkinMonthSelect").addEventListener("change", () => {
+    renderCheckinView();
+  });
+
   setInterval(() => tick(false), 250);
 
   if ("serviceWorker" in navigator) {
@@ -581,3 +799,4 @@ function init() {
 }
 
 document.addEventListener("DOMContentLoaded", init);
+

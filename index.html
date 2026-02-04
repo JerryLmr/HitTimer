@@ -14,11 +14,7 @@
 <body>
   <div id="app" class="app">
     <header class="topbar">
-      <button class="icon-btn" id="btnMenu" aria-label="菜单">
-        <span class="icon-menu"></span>
-      </button>
       <div class="title">HIIT训练</div>
-      <div class="topbar-spacer"></div>
     </header>
 
     <main>
@@ -79,6 +75,13 @@
             </div>
             <div class="row-right" id="valRoundRest">00:00</div>
           </button>
+          <button class="row" id="rowCheckins">
+            <div class="row-left">
+              <span class="row-icon">✅</span>
+              <span>查看打卡情况</span>
+            </div>
+            <div class="row-right">›</div>
+          </button>
         </div>
       </section>
 
@@ -110,6 +113,9 @@
         <div class="run-top">
           <div class="run-title" id="runStageTitle">工作</div>
           <div class="run-sub" id="runRoundInfo">第1轮 · 第1个动作</div>
+          <div class="run-actions">
+            <button class="ghost-btn" id="btnRunHome">返回主界面</button>
+          </div>
           <div class="run-dots">
             <div class="dot-row">
               <span>锻炼</span>
@@ -135,12 +141,51 @@
         </div>
 
         <div class="run-next" id="runNext">练习 1</div>
+        <div class="run-finish" id="runFinish">
+          <button class="pill-btn" id="btnFinishHome">返回主界面</button>
+          <div class="streak">
+            <div class="streak-title">本月完成次数：<span id="monthCount">0</span></div>
+            <div class="calendar-wrap">
+              <div class="calendar-weekdays" id="finishWeekdays"></div>
+              <div class="calendar" id="calendarGrid"></div>
+            </div>
+          </div>
+        </div>
 
         <div class="run-controls">
           <button class="icon-btn" id="btnSound" aria-label="声音">🔈</button>
           <button class="big-btn" id="btnPause" aria-label="暂停"><span class="pause-icon"></span></button>
           <button class="icon-btn" id="btnPrev" aria-label="上一项">⟲</button>
           <button class="icon-btn" id="btnNext" aria-label="下一项">⟳</button>
+        </div>
+      </section>
+
+      <section id="view-checkins" class="view">
+        <div class="list-header">
+          <div class="list-title">打卡情况</div>
+          <button class="pill-btn" id="btnCheckinsDone">完成</button>
+        </div>
+        <div class="checkin-controls">
+          <div class="segmented">
+            <button class="seg-btn is-active" data-mode="month" id="modeMonth">本月</button>
+            <button class="seg-btn" data-mode="year" id="modeYear">本年</button>
+          </div>
+          <div class="checkin-meta">
+            <div class="year-label" id="checkinYearLabel">2026</div>
+            <select id="checkinMonthSelect" class="month-select"></select>
+          </div>
+        </div>
+        <div class="streak">
+          <div class="streak-title" id="checkinTitle">本月完成次数：0</div>
+          <div class="calendar-wrap">
+            <div class="calendar-weekdays" id="checkinWeekdays"></div>
+            <div class="calendar" id="checkinCalendar"></div>
+          </div>
+        </div>
+        <div class="checkin-log">
+          <div class="log-title">打卡记录</div>
+          <div class="log-total" id="logTotal">总时间：00:00</div>
+          <div class="log-list" id="logList"></div>
         </div>
       </section>
     </main>
